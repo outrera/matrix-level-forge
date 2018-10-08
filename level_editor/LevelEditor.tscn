@@ -1,0 +1,547 @@
+[gd_scene load_steps=12 format=2]
+
+[ext_resource path="res://level_editor/LevelTemplate.tscn" type="PackedScene" id=1]
+
+[sub_resource type="GDScript" id=1]
+
+script/source = "signal playtest_toggled(playtesting)
+signal level_saved
+extends Node
+
+export (PackedScene) var LEVEL_TEMPLATE
+export (int) var GRID_SIZE = 1
+
+var current_level
+var cached_level
+var save_path
+
+var playtesting = false
+
+func _enter_tree():
+	get_tree().set_meta(\"in_editor\", true)
+	get_tree().set_meta(\"grid_size\", GRID_SIZE)
+
+func _ready():
+	new_level()
+	get_tree().paused = true
+
+func new_level():
+	open_level(LEVEL_TEMPLATE)
+	save_path = \"\"
+
+func open_level(new_level):
+	if current_level:
+		current_level.queue_free()
+	
+	current_level = new_level.instance()
+	cached_level = new_level
+	add_child(current_level)
+	save_path = new_level.resource_path
+	current_level.pause_mode = PAUSE_MODE_STOP
+	
+	if current_level.find_node(\"Alloi\"):
+		$UserCamera.position = current_level.find_node(\"Alloi\").position
+	else:
+		$UserCamera.position = Vector2()
+
+func begin_playtest():
+	playtesting = true
+	get_tree().set_meta(\"in_editor\", false)
+	var current_path = cached_level.resource_path
+	cached_level = PackedScene.new()
+	cached_level.pack(current_level)
+	get_tree().paused = false
+	current_level.queue_free()
+	current_level = cached_level.instance()
+	add_child(current_level)
+	current_level.find_node(\"Alloi\").begin_play()
+
+func end_playtest():
+	current_level.queue_free()
+	get_tree().set_meta(\"in_editor\", true)
+	current_level = cached_level.instance()
+	add_child(current_level)
+	get_tree().paused = true
+	$UserCamera.current = true
+	playtesting = false
+
+func _input(event):
+	if event.is_action_pressed(\"editor_save_level\") and !playtesting:
+		save_level()
+		get_tree().set_input_as_handled()
+
+func toggle_playtest():
+	if playtesting:
+		end_playtest()
+	else:
+		begin_playtest()
+	
+	emit_signal(\"playtest_toggled\", playtesting)
+
+func load_level(level_path):
+	var level = ResourceLoader.load(level_path)
+	
+	if level:
+		open_level(level)
+
+func save_level(level_path = null):
+	if level_path:
+		save_path = level_path
+	elif save_path == \"\":
+		$EditorUI/SaveAsDialogue.popup_centered()
+	
+	cached_level.pack(current_level)
+	var result = ResourceSaver.save(save_path, cached_level)
+	
+	if result == 0:
+		emit_signal(\"level_saved\")
+		print(save_path)
+	else:
+		print(\"There's been an error with saving the level!\")
+		print(\"Error: \" + str(result))
+
+
+func _on_FileDialog_file_selected(path):
+	load_level(path)
+
+func _on_SaveAsDialogue_file_selected(path):
+	save_level(path)
+"
+
+[sub_resource type="InputEventAction" id=2]
+
+device = 0
+action = "editor_toggle_playtest"
+pressed = true
+
+[sub_resource type="ShortCut" id=3]
+
+shortcut = SubResource( 2 )
+_sections_unfolded = [ "shortcut" ]
+
+[sub_resource type="GDScript" id=4]
+
+script/source = "extends Button
+
+export (Texture) var START_PLAYTESTING_ICON
+export (Texture) var STOP_PLAYTESTING_ICON
+
+func _on_LevelEditor_playtest_toggled(playtesting):
+	if playtesting:
+		icon = STOP_PLAYTESTING_ICON
+	else:
+		icon = START_PLAYTESTING_ICON
+"
+
+[sub_resource type="GDScript" id=5]
+
+script/source = "extends SpinBox
+
+func _ready():
+	value = get_tree().get_meta(\"grid_size\")
+	connect(\"value_changed\", self, \"_on_value_changed\")
+
+func _on_value_changed(value):
+	get_tree().set_meta(\"grid_size\", value)
+
+func _on_LevelEditor_playtest_toggled(playtesting):
+	visible = !playtesting
+"
+
+[sub_resource type="GDScript" id=6]
+
+script/source = "signal object_selected(object)
+extends Control
+
+var object_list = []
+var toolbox_button = preload(\"res://level_editor/ToolboxSelectionButton.tscn\")
+
+func _ready():
+	var dir = Directory.new()
+	dir.open(\"res://level_editor/toolbox\")
+	
+	dir.list_dir_begin(true)
+	var filename = dir.get_next()
+	
+	while (filename != \"\"):
+		object_list.append(load(dir.get_current_dir() + \"/\" + filename))
+		filename = dir.get_next()
+
+func _input(event):
+	if event.is_action_pressed(\"editor_toggle_object_selection\") and get_tree().get_meta(\"in_editor\"):
+		open_menu()
+
+func _unhandled_input(event):
+	if event.is_action(\"editor_place\") or event.is_action(\"editor_delete\") or event.is_action(\"editor_zoom_in\") or event.is_action(\"editor_zoom_out\"):
+		visible = false
+
+func open_menu():
+	visible = true
+	rect_global_position = get_global_mouse_position()
+	
+	for child in get_children():
+		child.queue_free()
+	
+	var children_list = []
+	
+	for object in object_list:
+		var new_button = toolbox_button.instance()
+		add_child(new_button)
+		new_button.set_image(object.PREVIEW_SPRITE)
+		new_button.child_index = len(children_list)
+		new_button.connect(\"index_selected\", self, \"child_selected\")
+		children_list.append(new_button)
+	
+	var direction = 0
+	var degrees_per_child = 360 / len(children_list)
+	
+	for child in children_list:
+		child.rect_position = Vector2(0, -1).rotated(deg2rad(direction)) * 40
+		direction += degrees_per_child
+
+func child_selected(index):
+	emit_signal(\"object_selected\", object_list[index])
+	visible = false
+
+func _on_LevelEditor_playtest_toggled(playtesting):
+	visible = false
+"
+
+[sub_resource type="GDScript" id=7]
+
+script/source = "extends Label
+
+export (float) var SECONDS_TILL_FADE = 0.75
+
+func _enter_tree():
+	modulate.a = 0
+
+func _process(delta):
+	if modulate.a > 0:
+		modulate.a -= (1 / SECONDS_TILL_FADE) * delta
+
+func _on_LevelEditor_level_saved():
+	modulate.a = 1
+"
+
+[sub_resource type="GDScript" id=8]
+
+script/source = "extends MenuButton
+
+enum { NEW, OPEN, SAVE, SAVE_AS }
+
+func _enter_tree():
+	get_popup().connect(\"index_pressed\", self, \"_on_index_pressed\")
+
+func _on_index_pressed(index):
+	match index:
+		NEW:
+			owner.new_level()
+		OPEN:
+			$\"../LoadDialogue\".popup_centered()
+		SAVE:
+			owner.save_level()
+		SAVE_AS:
+			$\"../SaveAsDialogue\".popup_centered()
+"
+
+[sub_resource type="GDScript" id=9]
+
+script/source = "extends Camera2D
+
+export (float) var PAN_SPEED = 200
+export (float) var SCROLL_SPEED = 5
+
+var pan_vector = Vector2()
+var scroll_value = 0
+
+func _process(delta):
+	if current:
+		position += pan_vector * delta * PAN_SPEED
+		zoom += Vector2(1, 1) * scroll_value * delta
+		if zoom.x < 0:
+			zoom.x = 0
+		if zoom.y < 0:
+			zoom.y = 0
+
+func _unhandled_input(event):
+	if event.is_action(\"pan_right\") or event.is_action(\"pan_left\"):
+		pan_vector.x = int(Input.is_action_pressed(\"pan_right\")) - int(Input.is_action_pressed(\"pan_left\"))
+	elif event.is_action(\"pan_up\") or event.is_action(\"pan_down\"):
+		pan_vector.y = int(Input.is_action_pressed(\"pan_down\")) - int(Input.is_action_pressed(\"pan_up\"))
+	elif event.is_action(\"editor_zoom_in\") or event.is_action(\"editor_zoom_out\"):
+		scroll_value = int(Input.is_action_pressed(\"editor_zoom_out\")) - int(Input.is_action_pressed(\"editor_zoom_in\"))
+"
+
+[sub_resource type="GDScript" id=10]
+
+script/source = "extends Sprite
+
+var selected_object
+var control_node
+
+func _ready():
+	control_node = Control.new()
+	add_child(control_node)
+
+func set_selected_object(new_object):
+	selected_object = new_object
+	texture = selected_object.PREVIEW_SPRITE
+
+func _process(delta):
+	visible = get_tree().get_meta(\"in_editor\") and !(Input.is_action_pressed(\"editor_place\") or Input.is_action_pressed(\"editor_delete\")) and !control_node.get_focus_owner()
+	
+	if visible:
+		var grid_size = get_tree().get_meta(\"grid_size\")
+		global_position = get_global_mouse_position().snapped(Vector2(grid_size, grid_size))
+
+func _unhandled_input(event):
+	if event.is_action_released(\"editor_place\") and get_tree().get_meta(\"in_editor\") and selected_object:
+		var new_object = selected_object.OBJECT.instance()
+		owner.current_level.add_child(new_object)
+		var grid_size = get_tree().get_meta(\"grid_size\")
+		new_object.global_position = new_object.get_global_mouse_position().snapped(Vector2(grid_size, grid_size))
+		new_object.owner = owner.current_level
+
+func _on_ObjectSelectionMenu_object_selected(object):
+	set_selected_object(object)
+"
+
+[node name="LevelEditor" type="Node"]
+pause_mode = 2
+script = SubResource( 1 )
+_sections_unfolded = [ "Pause" ]
+LEVEL_TEMPLATE = ExtResource( 1 )
+GRID_SIZE = 17
+
+[node name="EditorUI" type="CanvasLayer" parent="."]
+layer = 1
+offset = Vector2( 0, 0 )
+rotation = 0.0
+scale = Vector2( 1, 1 )
+transform = Transform2D( 1, 0, 0, 1, 0, 0 )
+
+[node name="PlaytestButton" type="Button" parent="EditorUI"]
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+margin_left = -7.0
+margin_right = 8.0
+margin_bottom = 15.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+hint_tooltip = "0Enter/Exit Playtesting"
+focus_mode = 2
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 4
+size_flags_vertical = 4
+toggle_mode = false
+enabled_focus_mode = 2
+shortcut = SubResource( 3 )
+group = null
+flat = false
+clip_text = true
+align = 1
+script = SubResource( 4 )
+_sections_unfolded = [ "Hint", "shortcut" ]
+START_PLAYTESTING_ICON = null
+STOP_PLAYTESTING_ICON = null
+
+[node name="GridSizeSpinBox" type="SpinBox" parent="EditorUI"]
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 215.0
+margin_right = 74.0
+margin_bottom = 239.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+min_value = 0.0
+max_value = 100.0
+step = 1.0
+page = 0.0
+value = 0.0
+exp_edit = false
+rounded = false
+allow_greater = true
+allow_lesser = false
+editable = true
+prefix = ""
+suffix = "px"
+script = SubResource( 5 )
+
+[node name="ObjectSelectionMenu" type="Control" parent="EditorUI"]
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 40.0
+margin_bottom = 40.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+script = SubResource( 6 )
+
+[node name="SaveLabel" type="Label" parent="EditorUI"]
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+margin_left = -40.5
+margin_top = -14.0
+margin_right = 40.5
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 2
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 4
+text = "Level Saved"
+align = 1
+valign = 1
+uppercase = true
+percent_visible = 1.0
+lines_skipped = 0
+max_lines_visible = -1
+script = SubResource( 7 )
+SECONDS_TILL_FADE = 0.75
+
+[node name="LoadDialogue" type="FileDialog" parent="EditorUI"]
+visible = false
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -110.0
+margin_top = -69.0
+margin_right = 457.0
+margin_bottom = 296.0
+rect_min_size = Vector2( 200, 70 )
+rect_scale = Vector2( 0.4, 0.4 )
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+popup_exclusive = false
+window_title = "Open a File"
+resizable = false
+dialog_hide_on_ok = false
+mode_overrides_title = true
+mode = 0
+access = 0
+filters = PoolStringArray( "*.tscn" )
+show_hidden_files = false
+current_dir = "res://"
+current_file = ""
+current_path = "res://"
+_sections_unfolded = [ "Rect", "filters" ]
+
+[node name="SaveAsDialogue" type="FileDialog" parent="EditorUI"]
+visible = false
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_left = 85.0
+margin_top = 58.0
+margin_right = 674.0
+margin_bottom = 335.0
+rect_min_size = Vector2( 200, 70 )
+rect_scale = Vector2( 0.4, 0.4 )
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+popup_exclusive = false
+window_title = "Save a File"
+resizable = false
+dialog_hide_on_ok = false
+mode_overrides_title = true
+mode = 4
+access = 0
+filters = PoolStringArray( "*.tscn" )
+show_hidden_files = false
+current_dir = "res://"
+current_file = ""
+current_path = "res://"
+_sections_unfolded = [ "Rect", "filters" ]
+
+[node name="FileMenuButton" type="MenuButton" parent="EditorUI"]
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_right = 12.0
+margin_bottom = 20.0
+rect_pivot_offset = Vector2( 0, 0 )
+rect_clip_content = false
+mouse_filter = 0
+mouse_default_cursor_shape = 0
+size_flags_horizontal = 1
+size_flags_vertical = 1
+toggle_mode = false
+action_mode = 0
+enabled_focus_mode = 0
+shortcut = null
+group = null
+text = "File"
+flat = false
+align = 1
+items = [ "New", null, 0, false, false, -1, 0, null, "", false, "Open", null, 0, false, false, -1, 0, null, "", false, "Save", null, 0, false, false, -1, 0, null, "", false, "Save As", null, 0, false, false, -1, 0, null, "", false, "Exit", null, 0, false, false, -1, 0, null, "", false ]
+script = SubResource( 8 )
+
+[node name="UserCamera" type="Camera2D" parent="."]
+anchor_mode = 1
+rotating = false
+current = true
+zoom = Vector2( 1, 1 )
+limit_left = -10000000
+limit_top = -10000000
+limit_right = 10000000
+limit_bottom = 10000000
+limit_smoothed = false
+drag_margin_h_enabled = false
+drag_margin_v_enabled = false
+smoothing_enabled = false
+smoothing_speed = 5.0
+offset_v = 0.0
+offset_h = 0.0
+drag_margin_left = 0.2
+drag_margin_top = 0.2
+drag_margin_right = 0.2
+drag_margin_bottom = 0.2
+editor_draw_screen = true
+editor_draw_limits = false
+editor_draw_drag_margin = false
+script = SubResource( 9 )
+PAN_SPEED = 100.0
+SCROLL_SPEED = 1.0
+
+[node name="ObjectPlacer" type="Sprite" parent="."]
+modulate = Color( 1, 1, 1, 0.470588 )
+z_index = 2
+script = SubResource( 10 )
+_sections_unfolded = [ "Visibility", "Z Index" ]
+
+[connection signal="level_saved" from="." to="EditorUI/SaveLabel" method="_on_LevelEditor_level_saved"]
+[connection signal="playtest_toggled" from="." to="EditorUI/PlaytestButton" method="_on_LevelEditor_playtest_toggled"]
+[connection signal="playtest_toggled" from="." to="EditorUI/GridSizeSpinBox" method="_on_LevelEditor_playtest_toggled"]
+[connection signal="playtest_toggled" from="." to="EditorUI/ObjectSelectionMenu" method="_on_LevelEditor_playtest_toggled"]
+[connection signal="pressed" from="EditorUI/PlaytestButton" to="." method="toggle_playtest"]
+[connection signal="object_selected" from="EditorUI/ObjectSelectionMenu" to="ObjectPlacer" method="_on_ObjectSelectionMenu_object_selected"]
+[connection signal="file_selected" from="EditorUI/LoadDialogue" to="." method="_on_FileDialog_file_selected"]
+[connection signal="file_selected" from="EditorUI/SaveAsDialogue" to="." method="_on_SaveAsDialogue_file_selected"]
