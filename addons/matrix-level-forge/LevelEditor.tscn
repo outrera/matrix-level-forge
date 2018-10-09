@@ -1,6 +1,4 @@
-[gd_scene load_steps=12 format=2]
-
-[ext_resource path="res://level_editor/LevelTemplate.tscn" type="PackedScene" id=1]
+[gd_scene load_steps=11 format=2]
 
 [sub_resource type="GDScript" id=1]
 
@@ -8,9 +6,9 @@ script/source = "signal playtest_toggled(playtesting)
 signal level_saved
 extends Node
 
-export (PackedScene) var LEVEL_TEMPLATE
 export (int) var GRID_SIZE = 1
 
+var level_template
 var current_level
 var cached_level
 var save_path
@@ -22,11 +20,12 @@ func _enter_tree():
 	get_tree().set_meta(\"grid_size\", GRID_SIZE)
 
 func _ready():
+	level_template = load(ProjectSettings.get_setting(\"matrix_level_forge/level_template\"))
 	new_level()
 	get_tree().paused = true
 
 func new_level():
-	open_level(LEVEL_TEMPLATE)
+	open_level(level_template)
 	save_path = \"\"
 
 func open_level(new_level):
@@ -39,10 +38,8 @@ func open_level(new_level):
 	save_path = new_level.resource_path
 	current_level.pause_mode = PAUSE_MODE_STOP
 	
-	if current_level.find_node(\"Alloi\"):
-		$UserCamera.position = current_level.find_node(\"Alloi\").position
-	else:
-		$UserCamera.position = Vector2()
+	$UserCamera.current = true
+	$UserCamera.position = Vector2()
 
 func begin_playtest():
 	playtesting = true
@@ -54,7 +51,6 @@ func begin_playtest():
 	current_level.queue_free()
 	current_level = cached_level.instance()
 	add_child(current_level)
-	current_level.find_node(\"Alloi\").begin_play()
 
 func end_playtest():
 	current_level.queue_free()
@@ -126,11 +122,29 @@ script/source = "extends Button
 export (Texture) var START_PLAYTESTING_ICON
 export (Texture) var STOP_PLAYTESTING_ICON
 
+func _ready():
+	if START_PLAYTESTING_ICON:
+		text = \"\"
+		icon = START_PLAYTESTING_ICON
+	else:
+		text = \">\"
+		icon = null
+
 func _on_LevelEditor_playtest_toggled(playtesting):
 	if playtesting:
-		icon = STOP_PLAYTESTING_ICON
+		if STOP_PLAYTESTING_ICON:
+			text = \"\"
+			icon = STOP_PLAYTESTING_ICON
+		else:
+			text = \"||\"
+			icon = null
 	else:
-		icon = START_PLAYTESTING_ICON
+		if START_PLAYTESTING_ICON:
+			text = \"\"
+			icon = START_PLAYTESTING_ICON
+		else:
+			text = \">\"
+			icon = null
 "
 
 [sub_resource type="GDScript" id=5]
@@ -154,11 +168,11 @@ script/source = "signal object_selected(object)
 extends Control
 
 var object_list = []
-var toolbox_button = preload(\"res://level_editor/ToolboxSelectionButton.tscn\")
+var toolbox_button = preload(\"res://addons/matrix-level-forge/ToolboxSelectionButton.tscn\")
 
 func _ready():
 	var dir = Directory.new()
-	dir.open(\"res://level_editor/toolbox\")
+	dir.open(\"res://addons/matrix-level-forge\")
 	
 	dir.list_dir_begin(true)
 	var filename = dir.get_next()
@@ -311,7 +325,6 @@ func _on_ObjectSelectionMenu_object_selected(object):
 pause_mode = 2
 script = SubResource( 1 )
 _sections_unfolded = [ "Pause" ]
-LEVEL_TEMPLATE = ExtResource( 1 )
 GRID_SIZE = 17
 
 [node name="EditorUI" type="CanvasLayer" parent="."]
@@ -326,12 +339,11 @@ anchor_left = 0.5
 anchor_top = 0.0
 anchor_right = 0.5
 anchor_bottom = 0.0
-margin_left = -7.0
-margin_right = 8.0
-margin_bottom = 15.0
+margin_left = -30.0
+margin_right = 30.0
+margin_bottom = 25.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = false
-hint_tooltip = "0Enter/Exit Playtesting"
 focus_mode = 2
 mouse_filter = 0
 mouse_default_cursor_shape = 0
@@ -341,22 +353,22 @@ toggle_mode = false
 enabled_focus_mode = 2
 shortcut = SubResource( 3 )
 group = null
+text = ">"
 flat = false
 clip_text = true
 align = 1
 script = SubResource( 4 )
-_sections_unfolded = [ "Hint", "shortcut" ]
+_sections_unfolded = [ "Rect", "Theme", "shortcut" ]
 START_PLAYTESTING_ICON = null
 STOP_PLAYTESTING_ICON = null
 
 [node name="GridSizeSpinBox" type="SpinBox" parent="EditorUI"]
 anchor_left = 0.0
-anchor_top = 0.0
+anchor_top = 1.0
 anchor_right = 0.0
-anchor_bottom = 0.0
-margin_top = 215.0
+anchor_bottom = 1.0
+margin_top = -24.0
 margin_right = 74.0
-margin_bottom = 239.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = false
 mouse_filter = 0
@@ -422,12 +434,11 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-margin_left = -110.0
-margin_top = -69.0
-margin_right = 457.0
-margin_bottom = 296.0
+margin_left = -283.5
+margin_top = -182.5
+margin_right = 283.5
+margin_bottom = 182.5
 rect_min_size = Vector2( 200, 70 )
-rect_scale = Vector2( 0.4, 0.4 )
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = false
 mouse_filter = 0
@@ -446,20 +457,19 @@ show_hidden_files = false
 current_dir = "res://"
 current_file = ""
 current_path = "res://"
-_sections_unfolded = [ "Rect", "filters" ]
+_sections_unfolded = [ "filters" ]
 
 [node name="SaveAsDialogue" type="FileDialog" parent="EditorUI"]
 visible = false
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
-margin_left = 85.0
-margin_top = 58.0
-margin_right = 674.0
-margin_bottom = 335.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+margin_left = -294.5
+margin_top = -138.5
+margin_right = 294.5
+margin_bottom = 138.5
 rect_min_size = Vector2( 200, 70 )
-rect_scale = Vector2( 0.4, 0.4 )
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = false
 mouse_filter = 0
@@ -485,8 +495,8 @@ anchor_left = 0.0
 anchor_top = 0.0
 anchor_right = 0.0
 anchor_bottom = 0.0
-margin_right = 12.0
-margin_bottom = 20.0
+margin_right = 60.0
+margin_bottom = 25.0
 rect_pivot_offset = Vector2( 0, 0 )
 rect_clip_content = false
 mouse_filter = 0
@@ -503,6 +513,7 @@ flat = false
 align = 1
 items = [ "New", null, 0, false, false, -1, 0, null, "", false, "Open", null, 0, false, false, -1, 0, null, "", false, "Save", null, 0, false, false, -1, 0, null, "", false, "Save As", null, 0, false, false, -1, 0, null, "", false, "Exit", null, 0, false, false, -1, 0, null, "", false ]
 script = SubResource( 8 )
+_sections_unfolded = [ "Rect" ]
 
 [node name="UserCamera" type="Camera2D" parent="."]
 anchor_mode = 1
@@ -539,8 +550,8 @@ _sections_unfolded = [ "Visibility", "Z Index" ]
 
 [connection signal="level_saved" from="." to="EditorUI/SaveLabel" method="_on_LevelEditor_level_saved"]
 [connection signal="playtest_toggled" from="." to="EditorUI/PlaytestButton" method="_on_LevelEditor_playtest_toggled"]
-[connection signal="playtest_toggled" from="." to="EditorUI/GridSizeSpinBox" method="_on_LevelEditor_playtest_toggled"]
 [connection signal="playtest_toggled" from="." to="EditorUI/ObjectSelectionMenu" method="_on_LevelEditor_playtest_toggled"]
+[connection signal="playtest_toggled" from="." to="EditorUI/GridSizeSpinBox" method="_on_LevelEditor_playtest_toggled"]
 [connection signal="pressed" from="EditorUI/PlaytestButton" to="." method="toggle_playtest"]
 [connection signal="object_selected" from="EditorUI/ObjectSelectionMenu" to="ObjectPlacer" method="_on_ObjectSelectionMenu_object_selected"]
 [connection signal="file_selected" from="EditorUI/LoadDialogue" to="." method="_on_FileDialog_file_selected"]
