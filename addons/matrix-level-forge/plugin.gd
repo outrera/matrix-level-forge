@@ -19,6 +19,13 @@ func _enter_tree():
 		"hint_string": "*.tscn"
 	}
 	ProjectSettings.add_property_info(template_settings)
+	
+	InputMap.add_action("pan_left")
+	
+	var pan_left_event = InputEventKey.new()
+	pan_left_event.scancode = KEY_A
+	InputMap.action_add_event("pan_left", pan_left_event)
+
 	ProjectSettings.save()
 
 func _exit_tree():

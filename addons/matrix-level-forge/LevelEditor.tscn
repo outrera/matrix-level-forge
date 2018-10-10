@@ -172,7 +172,7 @@ var toolbox_button = preload(\"res://addons/matrix-level-forge/ToolboxSelectionB
 
 func _ready():
 	var dir = Directory.new()
-	dir.open(\"res://addons/matrix-level-forge\")
+	dir.open(\"res://addons/matrix-level-forge/toolbox\")
 	
 	dir.list_dir_begin(true)
 	var filename = dir.get_next()
@@ -549,8 +549,8 @@ script = SubResource( 10 )
 _sections_unfolded = [ "Visibility", "Z Index" ]
 
 [connection signal="level_saved" from="." to="EditorUI/SaveLabel" method="_on_LevelEditor_level_saved"]
-[connection signal="playtest_toggled" from="." to="EditorUI/PlaytestButton" method="_on_LevelEditor_playtest_toggled"]
 [connection signal="playtest_toggled" from="." to="EditorUI/ObjectSelectionMenu" method="_on_LevelEditor_playtest_toggled"]
+[connection signal="playtest_toggled" from="." to="EditorUI/PlaytestButton" method="_on_LevelEditor_playtest_toggled"]
 [connection signal="playtest_toggled" from="." to="EditorUI/GridSizeSpinBox" method="_on_LevelEditor_playtest_toggled"]
 [connection signal="pressed" from="EditorUI/PlaytestButton" to="." method="toggle_playtest"]
 [connection signal="object_selected" from="EditorUI/ObjectSelectionMenu" to="ObjectPlacer" method="_on_ObjectSelectionMenu_object_selected"]
